@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AccountsPage } from "./pages/AccountsPage";
+import { AiAssistantPage } from "./pages/AiAssistantPage";
 import { EsppPage } from "./pages/EsppPage";
 import { ImportPage } from "./pages/ImportPage";
 import { MonthlyValuesPage } from "./pages/MonthlyValuesPage";
@@ -8,7 +9,15 @@ import { PassiveIncomePage } from "./pages/PassiveIncomePage";
 import { Trading212Page } from "./pages/Trading212Page";
 import type { Currency } from "./types";
 
-type Tab = "overview" | "accounts" | "monthly" | "trading212" | "espp" | "passive" | "import";
+type Tab =
+  | "overview"
+  | "accounts"
+  | "monthly"
+  | "trading212"
+  | "espp"
+  | "passive"
+  | "import"
+  | "assistant";
 
 const CURRENCIES: Currency[] = ["EUR", "USD", "PLN"];
 
@@ -57,6 +66,9 @@ export default function App() {
         <button className={`tab-button ${tab === "import" ? "active" : ""}`} onClick={() => setTab("import")}>
           Import
         </button>
+        <button className={`tab-button ${tab === "assistant" ? "active" : ""}`} onClick={() => setTab("assistant")}>
+          AI Assistant
+        </button>
       </nav>
 
       {tab === "overview" && <OverviewPage currency={currency} />}
@@ -66,6 +78,7 @@ export default function App() {
       {tab === "espp" && <EsppPage />}
       {tab === "passive" && <PassiveIncomePage currency={currency} />}
       {tab === "import" && <ImportPage />}
+      {tab === "assistant" && <AiAssistantPage currency={currency} />}
     </div>
   );
 }

@@ -185,7 +185,7 @@ def _allocation_by(db, fx, currency, as_of, by: str):
     accounts: list[Account] = accounts_service.list_accounts(db, include_inactive=False)
     totals: dict[str, D] = {}
     for account in accounts:
-        snapshot = calc.account_balance_as_of(db, account.id, as_of)
+        snapshot = calc.account_balance_as_of(db, account, as_of)
         if snapshot is None:
             continue
         value = calc.convert_snapshot(snapshot, currency, fx)

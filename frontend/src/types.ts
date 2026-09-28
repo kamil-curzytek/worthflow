@@ -20,6 +20,7 @@ export interface Account {
   currency: Currency;
   institution: string | null;
   is_active: boolean;
+  deactivated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -207,4 +208,13 @@ export interface AiImportCommitResponse {
   import_batch_id: string;
   status: string;
   row_count: number;
+}
+
+export interface ChatMessageDto {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatResponse {
+  reply: string;
 }

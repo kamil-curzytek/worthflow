@@ -6,6 +6,8 @@ import type {
   AllocationResponse,
   AssetClass,
   AssetClassTrendResponse,
+  ChatMessageDto,
+  ChatResponse,
   Currency,
   ImportCommitResponse,
   ImportInterpretationResponse,
@@ -207,6 +209,12 @@ export const api = {
     request<AiImportCommitResponse>("/imports/ai-commit", {
       method: "POST",
       body: JSON.stringify({ accounts }),
+    }),
+
+  assistantChat: (currency: Currency, goal: string, messages: ChatMessageDto[]) =>
+    request<ChatResponse>("/ai-assistant/chat", {
+      method: "POST",
+      body: JSON.stringify({ currency, goal, messages }),
     }),
 };
 

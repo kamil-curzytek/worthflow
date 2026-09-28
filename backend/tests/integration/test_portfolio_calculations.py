@@ -53,13 +53,61 @@ def test_missing_data_before_account_existed_is_excluded_not_zero(db, user, fx):
 
 def test_deactivated_account_still_counts_in_portfolio_value_as_of(db, user, fx):
     # as_of is a point-in-time historical query; deactivation is a present-day
-    # flag and shouldn't rewrite history.
+    # event and shouldn't rewrite history from before it happened.
     account = make_account(db, user, "Closed account", "EUR")
     snap(db, account, dt.date(2024, 1, 1), "500")
-    accounts_service.deactivate_account(db, account.id)
+    accounts_service.deactivate_account(db, account.id)  # deactivated "now" (test run time)
 
     value = calc.portfolio_value_as_of(db, fx, "EUR", dt.date(2024, 1, 15))
     assert value == Decimal(500)
+
+
+def test_deactivated_account_stops_counting_after_its_deactivation_date(db, user, fx):
+    # The actual bug this guards against: a deactivated account's last known
+    # balance must NOT carry forward indefinitely into months after it was
+    # closed — only up through its own deactivation date.
+    account = make_account(db, user, "Closed account", "EUR")
+    snap(db, account, dt.date(2024, 1, 1), "500")
+    accounts_service.deactivate_account(db, account.id)
+    account.deactivated_at = dt.datetime(2024, 2, 15, tzinfo=dt.timezone.utc)
+    db.commit()
+
+    # Before/at the deactivation date: still counts (history is untouched).
+    assert calc.portfolio_value_as_of(db, fx, "EUR", dt.date(2024, 2, 15)) == Decimal(500)
+    # After it: no longer counts, instead of freezing 500 forever.
+    assert calc.portfolio_value_as_of(db, fx, "EUR", dt.date(2024, 6, 1)) == Decimal(0)
+
+
+def test_asset_class_trend_drops_a_class_once_its_only_account_is_deactivated(db, user, fx):
+    # asset_class_trend answers "what do I hold today, broken down by class" —
+    # a class with no active accounts left drops out entirely, even for the
+    # months it genuinely had value in, unlike portfolio_trend's whole-history
+    # total. The two are allowed to disagree for exactly this reason.
+    account = make_account(db, user, "Wallet", "EUR", AssetClass.CRYPTO)
+    snap(db, account, dt.date(2024, 1, 1), "1000")
+    accounts_service.deactivate_account(db, account.id)
+    account.deactivated_at = dt.datetime(2024, 1, 31, tzinfo=dt.timezone.utc)
+    db.commit()
+
+    start, end = dt.date(2024, 1, 1), dt.date(2024, 3, 31)
+    _months, series = calc.asset_class_trend(db, fx, "EUR", start=start, end=end)
+    trend = calc.portfolio_trend(db, fx, "EUR", start=start, end=end)
+
+    assert series == []
+    # Meanwhile the whole-portfolio total still reflects January's real value.
+    assert [p.value for p in trend] == [Decimal(1000), Decimal(0), Decimal(0)]
+
+
+def test_asset_class_trend_keeps_class_with_another_active_account(db, user, fx):
+    closed = make_account(db, user, "Old wallet", "EUR", AssetClass.CRYPTO)
+    still_active = make_account(db, user, "New wallet", "EUR", AssetClass.CRYPTO)
+    snap(db, closed, dt.date(2024, 1, 1), "1000")
+    snap(db, still_active, dt.date(2024, 1, 1), "500")
+    accounts_service.deactivate_account(db, closed.id)
+
+    _months, series = calc.asset_class_trend(db, fx, "EUR")
+    by_class = {s.asset_class: s.values for s in series}
+    assert by_class["crypto"] == [Decimal(1500)]
 
 
 def test_portfolio_trend_empty_when_no_data(db, fx):
@@ -161,7 +209,8 @@ def test_asset_class_trend_sums_to_portfolio_trend_each_month(db, user, fx):
     snap(db, trading, dt.date(2024, 2, 10), "10000")  # appears in month 2
     snap(db, cash_eur, dt.date(2024, 3, 1), "1500")
     snap(db, crypto, dt.date(2024, 3, 15), "0")  # zero everywhere -> left out
-    # Inactive accounts still count, same as portfolio_trend.
+    # cash_eur is still active, so the "cash" class stays visible and keeps
+    # summing to the portfolio total even though one of its accounts closed.
     accounts_service.deactivate_account(db, cash_pln.id)
 
     months, series = calc.asset_class_trend(db, fx, "EUR")
