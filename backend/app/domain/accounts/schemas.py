@@ -40,5 +40,6 @@ class AccountRead(BaseModel):
     currency: str
     institution: str | None
     is_active: bool
+    deactivated_at: dt.datetime | None
     created_at: dt.datetime
     updated_at: dt.datetime

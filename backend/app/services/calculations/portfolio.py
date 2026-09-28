@@ -26,15 +26,31 @@ from app.services.calculations.types import (
 from app.services.exchange_rates.service import ExchangeRateService
 
 
-def account_balance_as_of(db: Session, account_id: str, as_of: dt.date) -> Snapshot | None:
-    """The most recent snapshot for this account on or before as_of."""
+def account_balance_as_of(db: Session, account: Account, as_of: dt.date) -> Snapshot | None:
+    """The most recent snapshot for this account on or before as_of.
+
+    An active account's last known snapshot carries forward indefinitely —
+    that's the whole point of "as of" (no update yet this month doesn't mean
+    zero). A deactivated account is different: once as_of moves past the
+    moment it was deactivated (Account.deactivated_at), it stops
+    contributing rather than freezing its final balance forever. as_of dates
+    at or before deactivation are unaffected — deactivating never rewrites
+    history for the period the account was genuinely active.
+    """
     stmt = (
         select(Snapshot)
-        .where(Snapshot.account_id == account_id, Snapshot.snapshot_date <= as_of)
+        .where(Snapshot.account_id == account.id, Snapshot.snapshot_date <= as_of)
         .order_by(Snapshot.snapshot_date.desc())
         .limit(1)
     )
-    return db.scalars(stmt).first()
+    snapshot = db.scalars(stmt).first()
+    if snapshot is None:
+        return None
+    if not account.is_active:
+        cutoff = account.deactivated_at.date() if account.deactivated_at else snapshot.snapshot_date
+        if as_of > cutoff:
+            return None
+    return snapshot
 
 
 def convert_snapshot(
@@ -57,7 +73,7 @@ def portfolio_value_as_of(
 
     total = Decimal(0)
     for account in accounts:
-        snapshot = account_balance_as_of(db, account.id, as_of)
+        snapshot = account_balance_as_of(db, account, as_of)
         if snapshot is None:
             continue
         total += convert_snapshot(snapshot, target_currency, fx)
@@ -175,7 +191,7 @@ def accounts_monthly_table(
     for account in accounts:
         values: list[Decimal | None] = []
         for month_end in months:
-            snapshot = account_balance_as_of(db, account.id, month_end)
+            snapshot = account_balance_as_of(db, account, month_end)
             values.append(Decimal(snapshot.value) if snapshot is not None else None)
         rows.append(
             AccountMonthlySeries(
@@ -234,12 +250,12 @@ def account_contributions_by_month(
         previous_month_end = months[month_index - 1]
         contributions: list[AccountContribution] = []
         for account in accounts:
-            current_snap = account_balance_as_of(db, account.id, month_end)
+            current_snap = account_balance_as_of(db, account, month_end)
             if current_snap is None:
                 continue
             current_converted = convert_snapshot(current_snap, target_currency, fx)
 
-            previous_snap = account_balance_as_of(db, account.id, previous_month_end)
+            previous_snap = account_balance_as_of(db, account, previous_month_end)
             if previous_snap is None:
                 delta = current_converted
             else:
@@ -272,12 +288,16 @@ def asset_class_trend(
 ) -> tuple[list[dt.date], list[AssetClassSeries]]:
     """portfolio_trend split by asset class: one series per class, one value per month-end.
 
-    Uses exactly the same account set as portfolio_trend (all accounts,
-    including inactive — deactivation shouldn't rewrite history) and the same
-    account_balance_as_of + convert_snapshot calls as portfolio_value_as_of,
-    so for every month the sum across all series equals that month's
-    portfolio_trend value. Classes that are zero in every month are left out;
-    series are ordered by their latest-month value, largest first.
+    An asset class only appears here while at least one *active* account
+    still belongs to it — like allocation_by_asset_class, this describes the
+    current portfolio's composition, not a full historical ledger. A class
+    whose only accounts have all been deactivated drops out of the chart
+    entirely (past and present), even though portfolio_trend's total still
+    reflects what those accounts were worth while they were active — the two
+    charts answer different questions ("what do I hold today, broken down?"
+    vs. "what was my whole net worth worth over time?") and are allowed to
+    diverge for a month a now-deactivated account contributed to. Series are
+    ordered by their latest-month value, largest first.
     """
     if start is None:
         start = earliest_snapshot_date(db)
@@ -288,11 +308,12 @@ def asset_class_trend(
 
     months = month_ends_between(start, end)
     accounts = list(db.scalars(select(Account)))
+    active_classes = {_asset_class_key(a) for a in accounts if a.is_active}
 
     per_class: dict[str, list[Decimal]] = {}
     for month_index, period_end in enumerate(months):
         for account in accounts:
-            snapshot = account_balance_as_of(db, account.id, period_end)
+            snapshot = account_balance_as_of(db, account, period_end)
             if snapshot is None:
                 continue
             values = per_class.setdefault(
@@ -303,7 +324,7 @@ def asset_class_trend(
     series = [
         AssetClassSeries(asset_class=key, values=values)
         for key, values in per_class.items()
-        if any(v != 0 for v in values)
+        if key in active_classes and any(v != 0 for v in values)
     ]
     series.sort(key=lambda s: (-s.values[-1], s.asset_class))
     return months, series
@@ -315,7 +336,7 @@ def allocation_by_asset_class(
     accounts = list(db.scalars(select(Account).where(Account.is_active.is_(True))))
     totals: dict[str, Decimal] = {}
     for account in accounts:
-        snapshot = account_balance_as_of(db, account.id, as_of)
+        snapshot = account_balance_as_of(db, account, as_of)
         if snapshot is None:
             continue
         value = convert_snapshot(snapshot, target_currency, fx)

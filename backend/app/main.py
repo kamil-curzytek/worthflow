@@ -2,7 +2,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import accounts, currencies, imports, portfolio, snapshots, sub_ledger
+from app.api.routers import (
+    accounts,
+    ai_assistant,
+    currencies,
+    imports,
+    portfolio,
+    snapshots,
+    sub_ledger,
+)
 from app.services.exchange_rates.service import ExchangeRateUnavailableError
 
 app = FastAPI(
@@ -21,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(accounts.router)
+app.include_router(ai_assistant.router)
 app.include_router(snapshots.router)
 app.include_router(portfolio.router)
 app.include_router(currencies.router)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import Account, AccountType, AssetClass
+from app.database.models import Account, AccountType, AssetClass, _utcnow
 from app.domain.accounts.schemas import AccountCreate, AccountUpdate
 from app.domain.currencies.currency import validate_currency
 
@@ -60,6 +60,11 @@ def update_account(db: Session, account_id: str, payload: AccountUpdate) -> Acco
     updates = payload.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(account, field, value)
+    if "is_active" in updates:
+        # Marks the moment the account stopped/resumed counting toward
+        # current totals, independent of its snapshot history — see
+        # account_balance_as_of.
+        account.deactivated_at = None if updates["is_active"] else _utcnow()
     db.commit()
     db.refresh(account)
     return account

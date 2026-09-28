@@ -87,6 +87,9 @@ class Account(Base):
     institution: Mapped[str | None] = mapped_column(String(255), nullable=True)
     currency: Mapped[str] = mapped_column(String(3))
     is_active: Mapped[bool] = mapped_column(default=True)
+    deactivated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
