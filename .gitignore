@@ -1,0 +1,45 @@
+# --- Personal financial data (NEVER commit) ---
+/data/private/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- Secrets / config ---
+.env
+.env.*
+!.env.example
+*.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/tsconfig.tsbuildinfo
+npm-debug.log*
+
+# --- Claude Code local runtime state ---
+.claude/scheduled_tasks.lock
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Uploaded source files (may contain personal data) ---
+/uploads/
+*.xlsx
+!/data/demo/**/*.xlsx
